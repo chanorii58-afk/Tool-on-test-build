@@ -133,6 +133,11 @@ local function isMyBlock(p)
     return false
 end
 
+
+local function getPosKey(pos)
+    return string.format("%.2f_%.2f_%.2f", pos.X, pos.Y, pos.Z)
+end
+
 local function snapshotWorkspace(onlyMine)
     local grid = {}
     local bricks = workspace:FindFirstChild("Bricks")
@@ -164,10 +169,6 @@ local function spoofEquip(tool)
     isSpoofing = false
 end
 
-local function getPosKey(pos)
-
-return string.format("%.2f_%.2f_%.2f", pos.X, pos.Y, pos.Z)
-end
 
 local function getInfiniteBuildArgs(targetPos, root)
 local sPos = root and root.Position or targetPos
