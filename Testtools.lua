@@ -408,11 +408,56 @@ end)
 waitFn(0.06)
 end
 waitFn(0.5)
-end
-end
-end
+                            end
+                        end
+                        
+                        if #toShape > 0 and shapeEvent then
+                            local sTool = LocalPlayer.Backpack:FindFirstChild("Shape") or char:FindFirstChild("Shape")
+                            if sTool then
+                                spoofEquip(sTool)
+                                for i, sd in ipairs(toShape) do
+                                    if not ag2Active then break end
+                                    ag2LastRebuildAttempt[sd.key] = now
+                                    pcall(function()
+                                        local diff = sd.saved.size - sd.part.Size
+                                        if math.abs(diff.X) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Right, hrp.Position, diff.X > 0 and "increase" or "decrease")
+                                        elseif math.abs(diff.Y) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Top, hrp.Position, diff.Y > 0 and "increase" or "decrease")
+                                        elseif math.abs(diff.Z) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Front, hrp.Position, diff.Z > 0 and "increase" or "decrease")
+                                        else
+                                            local curShape = sd.part:IsA("Part") and sd.part.Shape or nil
+                                            if curShape ~= sd.saved.shape then
+                                                shapeEvent:FireServer(sd.part, Enum.NormalId.Top, hrp.Position, "increase")
+                                            end
+                                        end
+                                    end)
+                                    waitFn(0.06)
+                                end
+                                waitFn(0.5)
+                            end
+                        end
 
-for k, cur in pairs(currentGrid) do
+                        if #toPaint > 0 and paintEvent then
+                            local pTool = LocalPlayer.Backpack:FindFirstChild("Paint") or char:FindFirstChild("Paint")
+                            if pTool then
+                                spoofEquip(pTool)
+                                for i, pd in ipairs(toPaint) do
+                                    if not ag2Active then break end
+                                    ag2LastRebuildAttempt[pd.key] = now
+                                    pcall(function()
+                                        local matStr = getMaterialStr(pd.saved.mat)
+                                        paintEvent:FireServer(pd.part, Enum.NormalId.Top, hrp.Position, "both 🤝", pd.saved.color, matStr, "")
+                                    end)
+                                    waitFn(0.06)
+                                end
+                                waitFn(0.5)
+                            end
+                        end
+                    end
+                    
+                    for k, cur in pairs(currentGrid) do
 if not protectedGrid[k] then
 protectedGrid[k] = {part = cur.part, pos = cur.pos, color = cur.color, mat = cur.mat, size = cur.size, shape = cur.shape}
 end
@@ -1702,22 +1747,21 @@ local function getAntiGrief2Tool()
         end
         
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                local pf = Instance.new("Frame", sf)
-                pf.Size = UDim2.new(1, -8, 0, 30)
-                pf.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                pf.Name = p.Name
-                local pfc = Instance.new("UICorner", pf); pfc.CornerRadius = UDim.new(0, 5)
-                
-                local pName = Instance.new("TextLabel", pf)
-                pName.Size = UDim2.new(1, -60, 1, 0)
-                pName.Position = UDim2.new(0, 5, 0, 0)
-                pName.BackgroundTransparency = 1
-                pName.Text = p.Name
-                pName.Font = Enum.Font.GothamSemibold
-                pName.TextSize = 12
-                pName.TextXAlignment = Enum.TextXAlignment.Left
-                pName.TextColor3 = whitelistedPlayers[p.UserId] and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(100, 100, 100)
+            local pf = Instance.new("Frame", sf)
+            pf.Size = UDim2.new(1, -8, 0, 30)
+            pf.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            pf.Name = p.Name
+            local pfc = Instance.new("UICorner", pf); pfc.CornerRadius = UDim.new(0, 5)
+            
+            local pName = Instance.new("TextLabel", pf)
+            pName.Size = UDim2.new(1, -60, 1, 0)
+            pName.Position = UDim2.new(0, 5, 0, 0)
+            pName.BackgroundTransparency = 1
+            pName.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+            pName.Font = Enum.Font.GothamSemibold
+            pName.TextSize = 11
+            pName.TextXAlignment = Enum.TextXAlignment.Left
+            pName.TextColor3 = whitelistedPlayers[p.UserId] and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(100, 100, 100)
                 
                 local checkBtn = Instance.new("TextButton", pf)
                 checkBtn.Size = UDim2.new(0, 25, 0, 25)
@@ -1747,7 +1791,6 @@ local function getAntiGrief2Tool()
                     pName.TextColor3 = Color3.fromRGB(100, 100, 100)
                 end)
             end
-        end
         sf.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
     end
     
@@ -1848,7 +1891,8 @@ local function getAntiGrief2Tool()
                                         if not ag2WrongBlockTime[k] then ag2WrongBlockTime[k] = now end
                                         
                                         if now - ag2WrongBlockTime[k] >= 5 then
-                                            table.insert(toDelete, {key = k, part = cur.part, saved = saved})
+                                            if needsPaint then table.insert(toPaint, {key = k, part = cur.part, saved = saved}) end
+                                            if needsShape then table.insert(toShape, {key = k, part = cur.part, saved = saved}) end
                                             ag2LastRebuildAttempt[k] = now - 5
                                             ag2WrongBlockTime[k] = nil
                                         end
@@ -1856,22 +1900,6 @@ local function getAntiGrief2Tool()
                                 else
                                     removeAG2Hologram(k)
                                 end
-                            end
-                        end
-
-                        if #toDelete > 0 then
-                            local delEvent = getEvent("Delete")
-                            local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or char:FindFirstChild("Delete")
-                            if delEvent and dTool then
-                                spoofEquip(dTool)
-                                for _, data in ipairs(toDelete) do
-                                    if not ag2Active then break end
-                                    pcall(function()
-                                        delEvent:FireServer(data.part, hrp.Position)
-                                    end)
-                                    waitFn(0.06)
-                                end
-                                waitFn(0.5)
                             end
                         end
 
@@ -1886,6 +1914,50 @@ local function getAntiGrief2Tool()
                                     pcall(function()
                                         local tBlock, tNorm, tHit, spoofFallback = getInfiniteBuildArgs(data.saved.pos, hrp)
                                         buildEvent:FireServer(tBlock, tNorm, tHit, "normal", spoofFallback)
+                                    end)
+                                    waitFn(0.06)
+                                end
+                                waitFn(0.5)
+                            end
+                        end
+                        if #toShape > 0 and shapeEvent then
+                            local sTool = LocalPlayer.Backpack:FindFirstChild("Shape") or char:FindFirstChild("Shape")
+                            if sTool then
+                                spoofEquip(sTool)
+                                for i, sd in ipairs(toShape) do
+                                    if not ag2Active then break end
+                                    ag2LastRebuildAttempt[sd.key] = now
+                                    pcall(function()
+                                        local diff = sd.saved.size - sd.part.Size
+                                        if math.abs(diff.X) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Right, hrp.Position, diff.X > 0 and "increase" or "decrease")
+                                        elseif math.abs(diff.Y) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Top, hrp.Position, diff.Y > 0 and "increase" or "decrease")
+                                        elseif math.abs(diff.Z) > 0.05 then
+                                            shapeEvent:FireServer(sd.part, Enum.NormalId.Front, hrp.Position, diff.Z > 0 and "increase" or "decrease")
+                                        else
+                                            local curShape = sd.part:IsA("Part") and sd.part.Shape or nil
+                                            if curShape ~= sd.saved.shape then
+                                                shapeEvent:FireServer(sd.part, Enum.NormalId.Top, hrp.Position, "increase")
+                                            end
+                                        end
+                                    end)
+                                    waitFn(0.06)
+                                end
+                                waitFn(0.5)
+                            end
+                        end
+
+                        if #toPaint > 0 and paintEvent then
+                            local pTool = LocalPlayer.Backpack:FindFirstChild("Paint") or char:FindFirstChild("Paint")
+                            if pTool then
+                                spoofEquip(pTool)
+                                for i, pd in ipairs(toPaint) do
+                                    if not ag2Active then break end
+                                    ag2LastRebuildAttempt[pd.key] = now
+                                    pcall(function()
+                                        local matStr = getMaterialStr(pd.saved.mat)
+                                        paintEvent:FireServer(pd.part, Enum.NormalId.Top, hrp.Position, "both 🤝", pd.saved.color, matStr, "")
                                     end)
                                     waitFn(0.06)
                                 end
