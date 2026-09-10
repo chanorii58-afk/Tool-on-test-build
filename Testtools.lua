@@ -171,27 +171,7 @@ end
 
 
 local function getInfiniteBuildArgs(targetPos, root)
-local sPos = root and root.Position or targetPos
-local bricks = workspace:FindFirstChild("Bricks")
-if bricks then
-for _, p in ipairs(bricks:GetDescendants()) do
-if p:IsA("BasePart") then
-local diff = targetPos - p.Position
-if math.abs(diff.Magnitude - 4) < 0.2 then
-local normal = Enum.NormalId.Top
-if diff.X > 3 then normal = Enum.NormalId.Right
-elseif diff.X < -3 then normal = Enum.NormalId.Left
-elseif diff.Y > 3 then normal = Enum.NormalId.Top
-elseif diff.Y < -3 then normal = Enum.NormalId.Bottom
-elseif diff.Z > 3 then normal = Enum.NormalId.Back
-elseif diff.Z < -3 then normal = Enum.NormalId.Front
-end
-return p, normal, sPos
-end
-end
-end
-end
-return workspace.Terrain, Enum.NormalId.Top, targetPos, sPos
+    return workspace.Terrain, Enum.NormalId.Top, targetPos, targetPos
 end
 
 local function getAntiGriefBuildTool()
@@ -1888,14 +1868,9 @@ local function getAntiGrief2Tool()
                                         removeAG2Hologram(k)
                                     else
                                         updateAG2Hologram(k, saved, "Incorrect")
-                                        if not ag2WrongBlockTime[k] then ag2WrongBlockTime[k] = now end
-                                        
-                                        if now - ag2WrongBlockTime[k] >= 5 then
-                                            if needsPaint then table.insert(toPaint, {key = k, part = cur.part, saved = saved}) end
-                                            if needsShape then table.insert(toShape, {key = k, part = cur.part, saved = saved}) end
-                                            ag2LastRebuildAttempt[k] = now - 5
-                                            ag2WrongBlockTime[k] = nil
-                                        end
+                                        if needsPaint then table.insert(toPaint, {key = k, part = cur.part, saved = saved}) end
+                                        if needsShape then table.insert(toShape, {key = k, part = cur.part, saved = saved}) end
+                                        ag2LastRebuildAttempt[k] = now
                                     end
                                 else
                                     removeAG2Hologram(k)
