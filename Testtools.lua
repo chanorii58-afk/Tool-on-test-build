@@ -178,7 +178,7 @@ elseif diff.Y < -3 then normal = Enum.NormalId.Bottom
 elseif diff.Z > 3 then normal = Enum.NormalId.Back
 elseif diff.Z < -3 then normal = Enum.NormalId.Front
 end
-return p, normal, sPos
+return p, normal, targetPos, sPos
 end
 end
 end
@@ -1333,6 +1333,8 @@ local whitelistedPlayers = {}
 
 local ag2Active = false
 local ag2ProtectedGrid = {}
+local ag2DisableBuilding = false
+local ag2DisableConn = nil
 local ag2LastRebuildAttempt = {}
 
 local ag2Holograms = {}
@@ -1813,9 +1815,6 @@ local function getAntiGrief2Tool()
     toggleBtn.TextSize = 14
     toggleBtn.TextColor3 = Color3.fromRGB(50, 150, 255)
     toggleBtn.Visible = false
-
-    local ag2DisableBuilding = false
-    local ag2DisableConn = nil
 
     local disableBuildBtn = Instance.new("TextButton", gui)
     disableBuildBtn.Size = UDim2.new(0, 100, 0, 30)
