@@ -1361,8 +1361,7 @@ local function didWhitelistedPlayerDoIt(pos)
         return false
     end
 
-    if checkChar(LocalPlayer.Character) then return true end
-
+    -- LocalPlayer bypass removed so testing on yourself works if not in whitelist
     for userId, _ in pairs(whitelistedPlayers) do
         local p = Players:GetPlayerByUserId(userId)
         if p and checkChar(p.Character) then return true end
@@ -1442,14 +1441,23 @@ local function trackAG2Part(k, p, pos)
                     end
                 elseif prop == "Size" or prop == "Position" then
                     local dist = (p.Position - saved.pos).Magnitude
-                    local maxBounds = math.max(saved.size.X, saved.size.Y, saved.size.Z)
+                    local sizeDiff = (p.Size - saved.size).Magnitude
+                    local savedRadius = saved.size.Magnitude / 2
+                    local currentRadius = p.Size.Magnitude / 2
                     
-                    if dist > (maxBounds / 2) + 0.5 then
-                        -- It is outside the holographic block! Delete and replace.
+                    if not p.Anchored or dist > (savedRadius + currentRadius + 0.1) or (sizeDiff < 0.05 and dist > 0.1) then
+                        -- It is outside the holographic block or was strictly moved! Delete and replace.
                         local delEvent = getEvent("Delete")
                         local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
                         if delEvent and dTool then
-                            deleteTrackedPart(p, hrp, dTool, delEvent)
+                            if deleteTrackedPart then
+                                deleteTrackedPart(p, hrp, dTool, delEvent)
+                            else
+                                spawnFn(function()
+                                    spoofEquip(dTool)
+                                    pcall(function() delEvent:FireServer(p, hrp.Position) end)
+                                end)
+                            end
                         end
                     else
                         -- It is inside the holographic block, attempt to reshape it back
@@ -1988,7 +1996,12 @@ local function getAntiGrief2Tool()
                             if not cur then
                                 local driftedOrUnanchored = false
                                 if saved.part and saved.part.Parent then
-                                    if not saved.part.Anchored or (saved.part.Position - saved.pos).Magnitude > 0.1 or saved.part.Size ~= saved.size then
+                                    local dist = (saved.part.Position - saved.pos).Magnitude
+                                    local sizeDiff = (saved.part.Size - saved.size).Magnitude
+                                    local savedRadius = saved.size.Magnitude / 2
+                                    local currentRadius = saved.part.Size.Magnitude / 2
+                                    
+                                    if not saved.part.Anchored or dist > (savedRadius + currentRadius + 0.1) or (sizeDiff < 0.05 and dist > 0.1) then
                                         driftedOrUnanchored = true
                                         if not didWhitelistedPlayerDoIt(saved.pos) then
                                             local delEvent = getEvent("Delete")
@@ -2006,20 +2019,28 @@ local function getAntiGrief2Tool()
                                                 end
                                             end
                                         end
+                                    else
+                                        -- It was resized and is still touching original bounds. 
+                                        -- It's not missing, it's just being reshaped. Restoring cur to prevent duplicate rebuilds.
+                                        cur = {part = saved.part, pos = saved.part.Position, color = saved.part.Color, mat = saved.part.Material, size = saved.part.Size, shape = saved.part:IsA("Part") and saved.part.Shape or nil}
                                     end
                                 end
 
-                                if didWhitelistedPlayerDoIt(saved.pos) and not driftedOrUnanchored then
-                                    ag2ProtectedGrid[k] = nil
-                                    removeAG2Hologram(k)
-                                else
-                                    updateAG2Hologram(k, saved, "Missing")
-                                    ag2WrongBlockTime[k] = nil
-                                    if not ag2LastRebuildAttempt[k] or (now - ag2LastRebuildAttempt[k] > 5) then
-                                        table.insert(toBuild, {key = k, saved = saved})
+                                if not cur then
+                                    if didWhitelistedPlayerDoIt(saved.pos) and not driftedOrUnanchored then
+                                        ag2ProtectedGrid[k] = nil
+                                        removeAG2Hologram(k)
+                                    else
+                                        updateAG2Hologram(k, saved, "Missing")
+                                        ag2WrongBlockTime[k] = nil
+                                        if not ag2LastRebuildAttempt[k] or (now - ag2LastRebuildAttempt[k] > 5) then
+                                            table.insert(toBuild, {key = k, saved = saved})
+                                        end
                                     end
                                 end
-                            else
+                            end
+                            
+                            if cur then
                                 local needsPaint = false
                                 if cur.color ~= saved.color or cur.mat ~= saved.mat then
                                     needsPaint = true
