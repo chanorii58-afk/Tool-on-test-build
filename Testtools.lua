@@ -1347,6 +1347,23 @@ local function disconnectAG2Connections()
     ag2PartConnections = {}
 end
 
+local function didWhitelistedPlayerDoIt(pos)
+    for userId, _ in pairs(whitelistedPlayers) do
+        local p = Players:GetPlayerByUserId(userId)
+        if p and p.Character then
+            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
+            local tool = p.Character:FindFirstChildOfClass("Tool")
+            if hrp then
+                local dist = (hrp.Position - pos).Magnitude
+                if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build") then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 local function trackAG2Part(k, p, pos)
     if not p or ag2PartConnections[p] then return end
     ag2PartConnections[p] = p.Changed:Connect(function(prop)
@@ -1677,22 +1694,7 @@ spoofEquip(pTool)
     t.Parent = LocalPlayer.Backpack
 end
 
-local function didWhitelistedPlayerDoIt(pos)
-    for userId, _ in pairs(whitelistedPlayers) do
-        local p = Players:GetPlayerByUserId(userId)
-        if p and p.Character then
-            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-            local tool = p.Character:FindFirstChildOfClass("Tool")
-            if hrp then
-                local dist = (hrp.Position - pos).Magnitude
-                if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build") then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
+
 
 local function getAntiGrief2Tool()
     if LocalPlayer.Backpack:FindFirstChild("Anti-Grief 2") then LocalPlayer.Backpack["Anti-Grief 2"]:Destroy() end
@@ -1927,36 +1929,8 @@ local function getAntiGrief2Tool()
                                     if not ag2Active then break end
                                     ag2LastRebuildAttempt[data.key] = now
                                     pcall(function()
-                                        local spoofPart = workspace.Terrain
-                                        if hrp then
-                                            local overlap = workspace:GetPartBoundsInRadius(hrp.Position, 40)
-                                            local closest = nil
-                                            local minDist = math.huge
-                                            for _, p in ipairs(overlap) do
-                                                if p:IsA("BasePart") and p ~= hrp and not p:IsDescendantOf(hrp.Parent) then
-                                                    local dist = (p.Position - hrp.Position).Magnitude
-                                                    if dist < minDist then
-                                                        minDist = dist
-                                                        closest = p
-                                                    end
-                                                end
-                                            end
-                                            if closest then 
-                                                spoofPart = closest
-                                            else
-                                                local params = RaycastParams.new()
-                                                params.FilterDescendantsInstances = {hrp.Parent}
-                                                params.FilterType = Enum.RaycastFilterType.Exclude
-                                                local result = workspace:Raycast(hrp.Position, Vector3.new(0, -500, 0), params)
-                                                if result and result.Instance then
-                                                    spoofPart = result.Instance
-                                                else
-                                                    spoofPart = hrp
-                                                end
-                                            end
-                                        end
-                                        
-                                        buildEvent:FireServer(spoofPart, Enum.NormalId.Top, data.saved.pos, "normal")
+                                        local tBlock, tNorm, tHit, spoofFallback = getInfiniteBuildArgs(data.saved.pos, hrp)
+                                        buildEvent:FireServer(tBlock, tNorm, tHit, "normal", spoofFallback)
                                     end)
                                     waitFn(0.06)
                                 end
