@@ -1338,6 +1338,63 @@ local ag2LastRebuildAttempt = {}
 local ag2Holograms = {}
 local ag2WrongBlockTime = {}
 
+
+local ag2PartConnections = {}
+local function disconnectAG2Connections()
+    for _, conn in pairs(ag2PartConnections) do
+        if conn then conn:Disconnect() end
+    end
+    ag2PartConnections = {}
+end
+
+local function trackAG2Part(k, p, pos)
+    if not p or ag2PartConnections[p] then return end
+    ag2PartConnections[p] = p.Changed:Connect(function(prop)
+        if not ag2Active then return end
+        if prop == "Color" or prop == "Material" or prop == "BrickColor" or prop == "Size" then
+            local saved = ag2ProtectedGrid[k]
+            if not saved then return end
+            if didWhitelistedPlayerDoIt(saved.pos) then
+                saved.color = p.Color
+                saved.mat = p.Material
+                saved.size = p.Size
+                if p:IsA("Part") then saved.shape = p.Shape end
+            else
+                local char = LocalPlayer.Character
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                if not hrp then return end
+                
+                if (prop == "Color" or prop == "Material" or prop == "BrickColor") then
+                    local paintEvent = getEvent("Paint")
+                    local pTool = LocalPlayer.Backpack:FindFirstChild("Paint") or (char and char:FindFirstChild("Paint"))
+                    if paintEvent and pTool then
+                        spawnFn(function()
+                            spoofEquip(pTool)
+                            paintEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, "both 🤝", saved.color, getMaterialStr(saved.mat), "")
+                        end)
+                    end
+                elseif prop == "Size" then
+                    local shapeEvent = getEvent("Shape")
+                    local sTool = LocalPlayer.Backpack:FindFirstChild("Shape") or (char and char:FindFirstChild("Shape"))
+                    if shapeEvent and sTool then
+                        spawnFn(function()
+                            spoofEquip(sTool)
+                            local diff = saved.size - p.Size
+                            if math.abs(diff.X) > 0.05 then
+                                shapeEvent:FireServer(p, Enum.NormalId.Right, hrp.Position, diff.X > 0 and "increase" or "decrease")
+                            elseif math.abs(diff.Y) > 0.05 then
+                                shapeEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, diff.Y > 0 and "increase" or "decrease")
+                            elseif math.abs(diff.Z) > 0.05 then
+                                shapeEvent:FireServer(p, Enum.NormalId.Front, hrp.Position, diff.Z > 0 and "increase" or "decrease")
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function clearAG2Holograms()
     for _, holo in pairs(ag2Holograms) do
         if holo then holo:Destroy() end
@@ -1781,11 +1838,12 @@ local function getAntiGrief2Tool()
             ag2ProtectedGrid = {}
             ag2LastRebuildAttempt = {}
             clearAG2Holograms()
-
+            disconnectAG2Connections()
             local initGrid = snapshotWorkspace()
             local count = 0
             for k, v in pairs(initGrid) do
                 ag2ProtectedGrid[k] = { part = v.part, pos = v.pos, color = v.color, mat = v.mat, size = v.size, shape = v.shape }
+                trackAG2Part(k, v.part, v.pos)
                 count = count + 1
             end
 
@@ -1849,12 +1907,10 @@ local function getAntiGrief2Tool()
                                         updateAG2Hologram(k, saved, "Incorrect")
                                         if not ag2WrongBlockTime[k] then ag2WrongBlockTime[k] = now end
                                         
-                                        if now - ag2WrongBlockTime[k] >= 5 then
-                                            if needsPaint then table.insert(toPaint, {key = k, part = cur.part, saved = saved}) end
-                                            if needsShape then table.insert(toShape, {key = k, part = cur.part, saved = saved}) end
-                                            ag2LastRebuildAttempt[k] = now - 5
-                                            ag2WrongBlockTime[k] = nil
-                                        end
+                                        if needsPaint then table.insert(toPaint, {key = k, part = cur.part, saved = saved}) end
+                                        if needsShape then table.insert(toShape, {key = k, part = cur.part, saved = saved}) end
+                                        ag2LastRebuildAttempt[k] = now
+                                        ag2WrongBlockTime[k] = nil
                                     end
                                 else
                                     removeAG2Hologram(k)
@@ -1871,17 +1927,34 @@ local function getAntiGrief2Tool()
                                     if not ag2Active then break end
                                     ag2LastRebuildAttempt[data.key] = now
                                     pcall(function()
-                                        local spoofPart = workspace:FindFirstChild("Beach") or workspace:FindFirstChild("Baseplate")
+                                        local spoofPart = workspace.Terrain
                                         if hrp then
-                                            local params = RaycastParams.new()
-                                            params.FilterDescendantsInstances = {hrp.Parent}
-                                            params.FilterType = Enum.RaycastFilterType.Exclude
-                                            local result = workspace:Raycast(hrp.Position, Vector3.new(0, -20, 0), params)
-                                            if result and result.Instance then
-                                                spoofPart = result.Instance
+                                            local overlap = workspace:GetPartBoundsInRadius(hrp.Position, 40)
+                                            local closest = nil
+                                            local minDist = math.huge
+                                            for _, p in ipairs(overlap) do
+                                                if p:IsA("BasePart") and p ~= hrp and not p:IsDescendantOf(hrp.Parent) then
+                                                    local dist = (p.Position - hrp.Position).Magnitude
+                                                    if dist < minDist then
+                                                        minDist = dist
+                                                        closest = p
+                                                    end
+                                                end
+                                            end
+                                            if closest then 
+                                                spoofPart = closest
+                                            else
+                                                local params = RaycastParams.new()
+                                                params.FilterDescendantsInstances = {hrp.Parent}
+                                                params.FilterType = Enum.RaycastFilterType.Exclude
+                                                local result = workspace:Raycast(hrp.Position, Vector3.new(0, -500, 0), params)
+                                                if result and result.Instance then
+                                                    spoofPart = result.Instance
+                                                else
+                                                    spoofPart = hrp
+                                                end
                                             end
                                         end
-                                        if not spoofPart then spoofPart = workspace.Terrain end
                                         
                                         buildEvent:FireServer(spoofPart, Enum.NormalId.Top, data.saved.pos, "normal")
                                     end)
@@ -1939,6 +2012,7 @@ local function getAntiGrief2Tool()
                     for k, cur in pairs(currentGrid) do
                         if not ag2ProtectedGrid[k] then
                             ag2ProtectedGrid[k] = {part = cur.part, pos = cur.pos, color = cur.color, mat = cur.mat, size = cur.size, shape = cur.shape}
+                            trackAG2Part(k, cur.part, cur.pos)
                         end
                     end
                 end
@@ -1946,6 +2020,7 @@ local function getAntiGrief2Tool()
         else
             toggleBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             toggleBtn.Text = "AG2: OFF"
+            disconnectAG2Connections()
             ag2ProtectedGrid = {}
             ag2LastRebuildAttempt = {}
             clearAG2Holograms()
