@@ -1348,18 +1348,24 @@ local function disconnectAG2Connections()
 end
 
 local function didWhitelistedPlayerDoIt(pos)
-    for userId, _ in pairs(whitelistedPlayers) do
-        local p = Players:GetPlayerByUserId(userId)
-        if p and p.Character then
-            local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-            local tool = p.Character:FindFirstChildOfClass("Tool")
-            if hrp then
-                local dist = (hrp.Position - pos).Magnitude
-                if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build" or tool.Name == "Shape" or tool.Name == "Resize") then
-                    return true
-                end
+    local function checkChar(c)
+        if not c then return false end
+        local hrp = c:FindFirstChild("HumanoidRootPart")
+        local tool = c:FindFirstChildOfClass("Tool")
+        if hrp then
+            local dist = (hrp.Position - pos).Magnitude
+            if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build" or tool.Name == "Shape" or tool.Name == "Resize") then
+                return true
             end
         end
+        return false
+    end
+
+    if checkChar(LocalPlayer.Character) then return true end
+
+    for userId, _ in pairs(whitelistedPlayers) do
+        local p = Players:GetPlayerByUserId(userId)
+        if p and checkChar(p.Character) then return true end
     end
     return false
 end
@@ -1390,6 +1396,18 @@ local function isWhitelistedBlock(p)
     return false
 end
 
+local function deleteTrackedPart(p, hrp, dTool, delEvent)
+    spawnFn(function()
+        spoofEquip(dTool)
+        local attempts = 0
+        while p and p.Parent and attempts < 10 do
+            pcall(function() delEvent:FireServer(p, hrp.Position) end)
+            waitFn(0.5)
+            attempts = attempts + 1
+        end
+    end)
+end
+
 local function trackAG2Part(k, p, pos)
     if not p or ag2PartConnections[p] then return end
     ag2PartConnections[p] = p.Changed:Connect(function(prop)
@@ -1416,15 +1434,38 @@ local function trackAG2Part(k, p, pos)
                             paintEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, "both 🤝", saved.color, getMaterialStr(saved.mat), "")
                         end)
                     end
-                elseif prop == "Size" or prop == "Position" or prop == "Anchored" then
+                elseif prop == "Anchored" and not p.Anchored then
+                    local delEvent = getEvent("Delete")
+                    local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
+                    if delEvent and dTool then
+                        deleteTrackedPart(p, hrp, dTool, delEvent)
+                    end
+                elseif prop == "Size" or prop == "Position" then
                     local dist = (p.Position - saved.pos).Magnitude
-                    if dist > 0.05 or p.Size ~= saved.size or not p.Anchored then
+                    local maxBounds = math.max(saved.size.X, saved.size.Y, saved.size.Z)
+                    
+                    if dist > (maxBounds / 2) + 0.5 then
+                        -- It is outside the holographic block! Delete and replace.
                         local delEvent = getEvent("Delete")
                         local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
                         if delEvent and dTool then
+                            deleteTrackedPart(p, hrp, dTool, delEvent)
+                        end
+                    else
+                        -- It is inside the holographic block, attempt to reshape it back
+                        local shapeEvent = getEvent("Shape")
+                        local sTool = LocalPlayer.Backpack:FindFirstChild("Shape") or (char and char:FindFirstChild("Shape"))
+                        if shapeEvent and sTool then
                             spawnFn(function()
-                                spoofEquip(dTool)
-                                pcall(function() delEvent:FireServer(p, hrp.Position) end)
+                                spoofEquip(sTool)
+                                local diff = saved.size - p.Size
+                                if math.abs(diff.X) > 0.05 then
+                                    shapeEvent:FireServer(p, Enum.NormalId.Right, hrp.Position, diff.X > 0 and "increase" or "decrease")
+                                elseif math.abs(diff.Y) > 0.05 then
+                                    shapeEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, diff.Y > 0 and "increase" or "decrease")
+                                elseif math.abs(diff.Z) > 0.05 then
+                                    shapeEvent:FireServer(p, Enum.NormalId.Front, hrp.Position, diff.Z > 0 and "increase" or "decrease")
+                                end
                             end)
                         end
                     end
@@ -1955,10 +1996,14 @@ local function getAntiGrief2Tool()
                                             local hrp = char and char:FindFirstChild("HumanoidRootPart")
                                             local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
                                             if delEvent and hrp and dTool then
-                                                spawnFn(function()
-                                                    spoofEquip(dTool)
-                                                    pcall(function() delEvent:FireServer(saved.part, hrp.Position) end)
-                                                end)
+                                                if deleteTrackedPart then
+                                                    deleteTrackedPart(saved.part, hrp, dTool, delEvent)
+                                                else
+                                                    spawnFn(function()
+                                                        spoofEquip(dTool)
+                                                        pcall(function() delEvent:FireServer(saved.part, hrp.Position) end)
+                                                    end)
+                                                end
                                             end
                                         end
                                     end
@@ -2073,8 +2118,10 @@ local function getAntiGrief2Tool()
                     
                     for k, cur in pairs(currentGrid) do
                         if not ag2ProtectedGrid[k] then
-                            ag2ProtectedGrid[k] = {part = cur.part, pos = cur.pos, color = cur.color, mat = cur.mat, size = cur.size, shape = cur.shape}
-                            trackAG2Part(k, cur.part, cur.pos)
+                            if isWhitelistedBlock(cur.part) then
+                                ag2ProtectedGrid[k] = {part = cur.part, pos = cur.pos, color = cur.color, mat = cur.mat, size = cur.size, shape = cur.shape}
+                                trackAG2Part(k, cur.part, cur.pos)
+                            end
                         end
                     end
                 end
