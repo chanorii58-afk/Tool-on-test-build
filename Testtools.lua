@@ -223,27 +223,19 @@ local function getProbableModifierFast(pos, targetOwner, playerCache)
 end
 
 local function getInfiniteBuildArgs(targetPos, root)
-	local sPos = root and root.Position or targetPos
-	local bricks = workspace:FindFirstChild("Bricks")
-	if bricks then
-		for _, p in ipairs(bricks:GetDescendants()) do
-			if p:IsA("BasePart") then
-				local diff = targetPos - p.Position
-				if math.abs(diff.Magnitude - 4) < 0.2 then
-					local normal = Enum.NormalId.Top
-					if diff.X > 3 then normal = Enum.NormalId.Right
-					elseif diff.X < -3 then normal = Enum.NormalId.Left
-					elseif diff.Y > 3 then normal = Enum.NormalId.Top
-					elseif diff.Y < -3 then normal = Enum.NormalId.Bottom
-					elseif diff.Z > 3 then normal = Enum.NormalId.Back
-					elseif diff.Z < -3 then normal = Enum.NormalId.Front
-					end
-					return p, normal, sPos
-				end
-			end
+	local spoofPart = workspace:FindFirstChild("Beach") or workspace:FindFirstChild("Baseplate")
+	if root then
+		local params = RaycastParams.new()
+		params.FilterDescendantsInstances = {root.Parent}
+		params.FilterType = Enum.RaycastFilterType.Exclude
+		local result = workspace:Raycast(root.Position, Vector3.new(0, -20, 0), params)
+		if result and result.Instance then
+			spoofPart = result.Instance
 		end
 	end
-	return workspace.Terrain, Enum.NormalId.Top, targetPos, sPos
+	if not spoofPart then spoofPart = workspace.Terrain end
+	
+	return spoofPart, Enum.NormalId.Top, targetPos, nil
 end
 
 local function getAntiGriefBuildTool()
