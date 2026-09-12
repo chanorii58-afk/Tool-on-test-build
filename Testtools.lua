@@ -1355,9 +1355,35 @@ local function didWhitelistedPlayerDoIt(pos)
             local tool = p.Character:FindFirstChildOfClass("Tool")
             if hrp then
                 local dist = (hrp.Position - pos).Magnitude
-                if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build") then
+                if dist < 100 and tool and (tool.Name == "Delete" or tool.Name == "Paint" or tool.Name == "Build" or tool.Name == "Shape" or tool.Name == "Resize") then
                     return true
                 end
+            end
+        end
+    end
+    return false
+end
+
+local function isWhitelistedBlock(p)
+    if not p then return false end
+    if p.Name == LocalPlayer.Name then return true end
+    for _, child in ipairs(p:GetChildren()) do
+        local cName = string.lower(child.Name)
+        if cName == "creator" or cName == "owner" or cName == "player" then
+            local playerId = nil
+            local playerName = nil
+            if child:IsA("StringValue") then playerName = child.Value end
+            if child:IsA("ObjectValue") and child.Value then 
+                playerName = child.Value.Name 
+                if child.Value:IsA("Player") then playerId = child.Value.UserId end
+            end
+            if child:IsA("IntValue") or child:IsA("NumberValue") then playerId = child.Value end
+            if playerName == LocalPlayer.Name then return true end
+            if playerId == LocalPlayer.UserId then return true end
+            for wId, _ in pairs(whitelistedPlayers) do
+                if playerId and playerId == wId then return true end
+                local wp = Players:GetPlayerByUserId(wId)
+                if wp and wp.Name == playerName then return true end
             end
         end
     end
@@ -1368,14 +1394,14 @@ local function trackAG2Part(k, p, pos)
     if not p or ag2PartConnections[p] then return end
     ag2PartConnections[p] = p.Changed:Connect(function(prop)
         if not ag2Active then return end
-        if prop == "Color" or prop == "Material" or prop == "BrickColor" or prop == "Size" then
+        if prop == "Color" or prop == "Material" or prop == "BrickColor" or prop == "Size" or prop == "Position" or prop == "Anchored" then
             local saved = ag2ProtectedGrid[k]
             if not saved then return end
             if didWhitelistedPlayerDoIt(saved.pos) then
-                saved.color = p.Color
-                saved.mat = p.Material
-                saved.size = p.Size
-                if p:IsA("Part") then saved.shape = p.Shape end
+                if prop == "Color" or prop == "BrickColor" then saved.color = p.Color end
+                if prop == "Material" then saved.mat = p.Material end
+                if prop == "Size" then saved.size = p.Size end
+                if p:IsA("Part") and prop == "Shape" then saved.shape = p.Shape end
             else
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -1390,21 +1416,17 @@ local function trackAG2Part(k, p, pos)
                             paintEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, "both 🤝", saved.color, getMaterialStr(saved.mat), "")
                         end)
                     end
-                elseif prop == "Size" then
-                    local shapeEvent = getEvent("Shape")
-                    local sTool = LocalPlayer.Backpack:FindFirstChild("Shape") or (char and char:FindFirstChild("Shape"))
-                    if shapeEvent and sTool then
-                        spawnFn(function()
-                            spoofEquip(sTool)
-                            local diff = saved.size - p.Size
-                            if math.abs(diff.X) > 0.05 then
-                                shapeEvent:FireServer(p, Enum.NormalId.Right, hrp.Position, diff.X > 0 and "increase" or "decrease")
-                            elseif math.abs(diff.Y) > 0.05 then
-                                shapeEvent:FireServer(p, Enum.NormalId.Top, hrp.Position, diff.Y > 0 and "increase" or "decrease")
-                            elseif math.abs(diff.Z) > 0.05 then
-                                shapeEvent:FireServer(p, Enum.NormalId.Front, hrp.Position, diff.Z > 0 and "increase" or "decrease")
-                            end
-                        end)
+                elseif prop == "Size" or prop == "Position" or prop == "Anchored" then
+                    local dist = (p.Position - saved.pos).Magnitude
+                    if dist > 0.05 or p.Size ~= saved.size or not p.Anchored then
+                        local delEvent = getEvent("Delete")
+                        local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
+                        if delEvent and dTool then
+                            spawnFn(function()
+                                spoofEquip(dTool)
+                                pcall(function() delEvent:FireServer(p, hrp.Position) end)
+                            end)
+                        end
                     end
                 end
             end
@@ -1743,6 +1765,56 @@ local function getAntiGrief2Tool()
     toggleBtn.TextColor3 = Color3.fromRGB(50, 150, 255)
     toggleBtn.Visible = false
 
+    local ag2DisableBuilding = false
+    local ag2DisableConn = nil
+
+    local disableBuildBtn = Instance.new("TextButton", gui)
+    disableBuildBtn.Size = UDim2.new(0, 100, 0, 30)
+    disableBuildBtn.Position = UDim2.new(0.5, -50, 1, -80)
+    disableBuildBtn.BackgroundColor3 = ag2DisableBuilding and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(255, 255, 255)
+    local dbbc = Instance.new("UICorner", disableBuildBtn); dbbc.CornerRadius = UDim.new(0, 15)
+    disableBuildBtn.Text = ag2DisableBuilding and "No Build: ON" or "No Build: OFF"
+    disableBuildBtn.Font = Enum.Font.GothamBold
+    disableBuildBtn.TextSize = 12
+    disableBuildBtn.TextColor3 = Color3.fromRGB(50, 150, 255)
+    disableBuildBtn.Visible = false
+
+    disableBuildBtn.MouseButton1Click:Connect(function()
+        ag2DisableBuilding = not ag2DisableBuilding
+        if ag2DisableBuilding then
+            disableBuildBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
+            disableBuildBtn.Text = "No Build: ON"
+            disableBuildBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            
+            if ag2DisableConn then ag2DisableConn:Disconnect() end
+            ag2DisableConn = workspace.DescendantAdded:Connect(function(child)
+                if not ag2DisableBuilding then return end
+                if not child:IsA("BasePart") then return end
+                task.wait(0.1)
+                if not isValidBrick(child) then return end
+                if not isWhitelistedBlock(child) then
+                    local char = LocalPlayer.Character
+                    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                    local delEvent = getEvent("Delete")
+                    local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
+                    if delEvent and dTool and hrp then
+                        spawnFn(function()
+                            spoofEquip(dTool)
+                            pcall(function() delEvent:FireServer(child, hrp.Position) end)
+                        end)
+                    end
+                end
+            end)
+            sendAlert("Disable Building ON! Non-whitelisted blocks will be instantly destroyed.", "#FF0000", Color3.fromRGB(255, 0, 0))
+        else
+            disableBuildBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            disableBuildBtn.Text = "No Build: OFF"
+            disableBuildBtn.TextColor3 = Color3.fromRGB(50, 150, 255)
+            if ag2DisableConn then ag2DisableConn:Disconnect(); ag2DisableConn = nil end
+            sendAlert("Disable Building OFF.", "#00FFFF", Color3.fromRGB(0, 255, 255))
+        end
+    end)
+
     local rightFrame = Instance.new("Frame", gui)
     rightFrame.Size = UDim2.new(0, 200, 0, 300)
     rightFrame.Position = UDim2.new(1, -220, 0.5, -150)
@@ -1873,10 +1945,26 @@ local function getAntiGrief2Tool()
                         for k, saved in pairs(ag2ProtectedGrid) do
                             local cur = currentGrid[k]
                             if not cur then
-                                if saved.part and saved.part.Parent and not saved.part.Anchored then
-                                    ag2ProtectedGrid[k] = nil
-                                    removeAG2Hologram(k)
-                                elseif didWhitelistedPlayerDoIt(saved.pos) then
+                                local driftedOrUnanchored = false
+                                if saved.part and saved.part.Parent then
+                                    if not saved.part.Anchored or (saved.part.Position - saved.pos).Magnitude > 0.1 or saved.part.Size ~= saved.size then
+                                        driftedOrUnanchored = true
+                                        if not didWhitelistedPlayerDoIt(saved.pos) then
+                                            local delEvent = getEvent("Delete")
+                                            local char = LocalPlayer.Character
+                                            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+                                            local dTool = LocalPlayer.Backpack:FindFirstChild("Delete") or (char and char:FindFirstChild("Delete"))
+                                            if delEvent and hrp and dTool then
+                                                spawnFn(function()
+                                                    spoofEquip(dTool)
+                                                    pcall(function() delEvent:FireServer(saved.part, hrp.Position) end)
+                                                end)
+                                            end
+                                        end
+                                    end
+                                end
+
+                                if didWhitelistedPlayerDoIt(saved.pos) and not driftedOrUnanchored then
                                     ag2ProtectedGrid[k] = nil
                                     removeAG2Hologram(k)
                                 else
@@ -2006,6 +2094,7 @@ local function getAntiGrief2Tool()
         pcall(function() gui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreGui end)
         if not gui.Parent then gui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
         toggleBtn.Visible = true
+        disableBuildBtn.Visible = true
         rightFrame.Visible = true
     end)
 
@@ -2013,6 +2102,7 @@ local function getAntiGrief2Tool()
         if isSpoofing then return end
         gui.Parent = nil
         toggleBtn.Visible = false
+        disableBuildBtn.Visible = false
         rightFrame.Visible = false
     end)
     
